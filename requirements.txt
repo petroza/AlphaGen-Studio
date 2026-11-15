@@ -1,0 +1,9 @@
+# GUI + video/export prostředí AlphaGen Studio (.venv)
+# Inference běží v odděleném oficiálním prostředí LTX-2 (vendor/LTX-2/.venv, instaluje setup.bat přes uv).
+PySide6>=6.8
+numpy>=2.0
+opencv-python>=4.10
+psutil>=6.0
+OpenEXR>=3.3
+requests>=2.32
+pytest>=8.0

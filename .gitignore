@@ -1,0 +1,15 @@
+.venv/
+vendor/LTX-2/
+models/
+cache/
+work/
+output/
+logs/
+config/
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/data/
+tests/_fake_worker_runs.txt
+*.part
+*.part.json
