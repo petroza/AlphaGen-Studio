@@ -59,7 +59,7 @@ Nothing else needs to be set – the app detects your GPU and RAM and picks safe
 | Profile | Matte computed at | Time per 49 frames (Full HD source) | ≈ 1 min of 25 fps video | Shape vs Normal | When to use |
 |---|---|---|---|---|---|
 | Turbo | 768 px | 55–66 s | ~30 min | 89–97 % | quick check of what the model picks |
-| **Fast ★** (default) | 1280 px | 103–106 s | ~65 min | 93–98 % | most work |
+| **Fast ★** (default) | 1280 px | 103–106 s | ~55 min (v1.1) | 93–98 % | most work |
 | Normal | full (up to 1920×1088) | 227 s | ~140 min | reference | final key with fine hair / motion blur |
 | High quality | full | ~+20 % vs Normal | | ≈ Normal | longer segment blending, stronger anti-flicker |
 
@@ -196,6 +196,18 @@ shape IoU 0.961; differences are only in the finest strands.
 ![AlphaGen Studio vs. official reference](docs/results_vs_lightricks.jpg)
 
 *Example footage: Lightricks, [AlphaGen model card](https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Alpha-Gen).*
+
+**Speed optimizations (v1.1, same results – verified bit-identical mattes):**
+
+| Optimization | Effect (RTX 4070 Ti) |
+|---|---|
+| Streamed transformer kept loaded between segments (official code rebuilds it every call) | −14 s per segment (2nd segment 41 s → 24 s at 768 px) |
+| Empty-prompt embedding cached on disk – the 24 GB Gemma text encoder is not loaded again | −14 s per job start |
+| Longer segments where they fit: 97 frames up to 1280 px (8.2 GB VRAM), 49 at Full HD | ~9 % fewer computed frames, ⅓ of the seams |
+| Parallel matte refinement + exact 3-frame median without sorting | export ~2× faster (49 Full HD frames, 3 outputs: 15.2 s → 8.0 s) |
+| Edge refinement off in Automatic (measured only ~1 % closer to Normal) | ~0.2 s per frame less in export |
+
+End-to-end, *Fast* on 97 Full HD frames: **216 s** total (≈ 310 s with the v1.0 pipeline).
 
 **Longer clips** (4 segments, overlap 8, Full-resolution 1280×656 source, ProRes 4444 + PNG matte + preview):
 150 frames → **370 s total** (≈ 2.5 s per frame including export), 145 frames → 368 s.

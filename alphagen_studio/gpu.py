@@ -92,6 +92,13 @@ class MemoryPlan:
     feasible: bool
     notes: list[str]
     vae: str = "diffvae"
+    segment_lowres: int = 0  # max. úsek, když se maska počítá do 1280 px (0 = stejné jako recommended_segment)
+
+    def segment_for(self, work_long_side: int) -> int:
+        """Nejdelší ověřený úsek pro dané pracovní rozlišení masky."""
+        if self.segment_lowres and work_long_side <= 1280:
+            return self.segment_lowres
+        return self.recommended_segment
 
 
 BF16_MIN_RAM_GB = 96  # celková RAM pro bf16 streamování (39 GB váhy + Gemma + systém)
@@ -122,9 +129,11 @@ def recommend(gpu: GpuInfo | None, ram_total_gb: float) -> MemoryPlan:
     else:
         plan = MemoryPlan("fp8-cast", "cpu", 1920, 49, True,
                           ["12 GB card: FP8 + offload to RAM + lightweight convolutional VAE.",
-                           "Verified on RTX 4070 Ti: Full HD segment of 49 frames ≈ 3.8 min (peak 9.2 GB VRAM), 33 frames ≈ 2.6 min.",
+                           "Verified on RTX 4070 Ti: Full HD 49-frame segments (peak 9.2 GB VRAM); up to 1280 px 97-frame segments (8.2 GB).",
                            "On OOM (other apps holding VRAM) shorten the segment to 33.",
                            "The official DiffVAE fits in 12 GB only up to ~1280 px and 33 frames."], vae="conv")
+    if plan.recommended_segment < 97:
+        plan.segment_lowres = 97  # ověřeno na RTX 4070 Ti: 1280 px, 97 snímků, špička 8,2 GB
     if plan.offload == "cpu" and ram_total_gb and ram_total_gb >= BF16_MIN_RAM_GB:
         # Měřeno na RTX 4070 Ti: při streamování z RAM je bf16 stejně rychlé jako FP8 a maska je čistší
         # (závěs: alfa pozadí 0,05 proti 0,11–0,34 u FP8). Podmínkou je dost RAM pro bf16 váhy (39 GB).

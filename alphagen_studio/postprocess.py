@@ -273,7 +273,8 @@ class TemporalSmoother:
     def _smooth(self, prev: np.ndarray | None, cur: np.ndarray, nxt: np.ndarray | None) -> np.ndarray:
         if self.amount <= 0 or prev is None or nxt is None:
             return cur
-        med = np.median(np.stack([prev, cur, nxt]), axis=0)
+        # přesný medián ze 3 hodnot bez třídění: max(min(a,b), min(max(a,b), c)) – ~10× rychlejší než np.median
+        med = np.maximum(np.minimum(prev, cur), np.minimum(np.maximum(prev, cur), nxt))
         band = edge_band(cur, 3)
         w = np.clip(band * self.amount, 0.0, 1.0)
         return (cur * (1.0 - w) + med * w).astype(np.float32)

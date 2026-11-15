@@ -77,23 +77,95 @@ def _windows_compat() -> None:
         mod.host_bytes = host_bytes
 
 
+_STREAM_CACHE: dict = {}
+
+
+def _keep_streaming_transformer() -> None:
+    """Drží streamovaný transformer sestavený mezi úseky (výsledek beze změny).
+
+    Oficiální ``DiffusionStage`` při offloadu sestaví streamovaný model (39 GB vah do pinned RAM
+    + LoRA) při KAŽDÉM volání a po něm ho zavře – měřeno ~14 s na úsek. Váhy i LoRA jsou pro všechny
+    úseky stejné, takže sestavený model lze znovu použít. Klíč cache = váhy + LoRA + kvantizace.
+    """
+    from contextlib import contextmanager
+    from dataclasses import replace
+
+    from ltx_pipelines.utils.blocks import diffusion_stage as ds
+
+    if getattr(ds.DiffusionStage, "_alphagen_keep", False):
+        return
+
+    @contextmanager
+    def ctx(self):
+        builder = self._prepared_builder()
+        selection = ds.transformer_checkpoint_selection_ops(builder.model_config())
+        if selection is not None:
+            builder = replace(builder, base=builder.base.with_sd_ops((*builder.base.sd_ops, selection)))
+        base = builder.base
+        key = (tuple(str(p) for p in base.paths),
+               tuple((str(getattr(lo, "path", lo)), float(getattr(lo, "strength", 0) or 0)) for lo in base.loras),
+               type(self._quantization).__name__, str(self._device), str(self._dtype))
+        entry = _STREAM_CACHE.get(key)
+        if entry is None:
+            for old_key, (old_wrapped, _m) in list(_STREAM_CACHE.items()):  # jen jeden model najednou
+                old_wrapped.close()
+                _STREAM_CACHE.pop(old_key)
+            wrapped = builder.build(device=self._device, dtype=self._dtype)
+            entry = (wrapped, ds.X0Model(wrapped).eval())
+            _STREAM_CACHE[key] = entry
+        else:
+            emit("log", level="INFO", message="Reusing the streamed transformer from the previous segment.")
+        yield entry[1]
+
+    ds.DiffusionStage._streaming_transformer_ctx = ctx
+    ds.DiffusionStage._alphagen_keep = True
+
+
 class _CachedPromptEncoder:
     """Prázdný prompt je pro všechny segmenty stejný → Gemma (24 GB) se spustí jen jednou.
 
     Výstup kódovače je deterministický (závisí jen na textu), takže cache nemění výsledek.
     """
 
-    def __init__(self, inner) -> None:
+    def __init__(self, inner, disk_dir: str | None = None, encoder_path: str = "") -> None:
         self.inner = inner
         self.cache: dict = {}
+        self.disk_dir = Path(disk_dir) if disk_dir else None
+        self.encoder_id = f"{Path(encoder_path).name}_{Path(encoder_path).stat().st_size if encoder_path else 0}"
+
+    def _disk_file(self, key: tuple) -> Path | None:
+        if not self.disk_dir:
+            return None
+        import hashlib
+
+        h = hashlib.sha1(repr((self.encoder_id, key)).encode()).hexdigest()[:16]
+        return self.disk_dir / f"prompt_{h}.pt"
 
     def __call__(self, prompts, **kwargs):
+        import torch
+
         if any(kwargs.get(k) for k in ("enhance_first_prompt", "enhance_prompt_image")):
             return self.inner(prompts, **kwargs)
         key = tuple(prompts)
-        if key not in self.cache:
-            self.cache[key] = self.inner(prompts, **kwargs)
-        return self.cache[key]
+        if key in self.cache:
+            return self.cache[key]
+        f = self._disk_file(key)
+        if f and f.exists():  # Gemma (24 GB) se vůbec nemusí načítat
+            try:
+                self.cache[key] = torch.load(f, map_location=getattr(self.inner, "_device", "cpu"), weights_only=False)
+                emit("log", level="INFO", message="Prompt embedding loaded from disk cache (text encoder skipped).")
+                return self.cache[key]
+            except Exception:  # noqa: BLE001 - poškozená cache → přepočítat
+                pass
+        out = self.inner(prompts, **kwargs)
+        self.cache[key] = out
+        if f:
+            try:
+                f.parent.mkdir(parents=True, exist_ok=True)
+                torch.save(out, f)
+            except Exception:  # noqa: BLE001 - cache je jen zrychlení
+                pass
+        return out
 
     def __getattr__(self, name):
         return getattr(self.inner, name)
@@ -178,7 +250,10 @@ class Worker:
             diffvae_optimization=args.diffvae_optimization,
             stages=icl.resolve_ic_lora_stages(height=128, width=128, tile=False, skip_stage_2=True),
         )
-        self.pipeline.prompt_encoder = _CachedPromptEncoder(self.pipeline.prompt_encoder)
+        self.pipeline.prompt_encoder = _CachedPromptEncoder(self.pipeline.prompt_encoder, cfg.get("cache_dir"),
+                                                            cfg["models"]["text_encoder"])
+        if cfg.get("keep_transformer", True):
+            _keep_streaming_transformer()
         self.load_cfg = cfg
         emit("loaded", seconds=round(time.time() - t0, 1),
              lora_reference_downscale=getattr(self.pipeline, "reference_downscale_factor", 1))

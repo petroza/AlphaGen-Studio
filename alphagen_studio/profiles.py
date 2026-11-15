@@ -25,7 +25,7 @@ class Profile:
 
 PROFILES = [
     Profile("turbo", "Turbo", 768, 0, 0.3,
-            "Matte at 768 px, refined against the source. Fastest – for previews and rough keys."),
+            "Matte at 768 px. Fastest – for previews and rough keys."),
     Profile("fast", "Fast", 1280, 8, 0.3, "Recommended. Matte up to 1280 px, smooth transitions."),
     Profile("normal", "Normal", 0, 8, 0.3, "Full resolution (up to Full HD). Finest hair and motion blur."),
     Profile("high", "High quality", 0, 16, 0.5,
@@ -42,9 +42,11 @@ def apply_profile(js, key: str, src_w: int, src_h: int, gpu: GpuInfo | None, ram
     if plan.recommended_long_side and plan.recommended_long_side < 1920:
         cap = min(cap or plan.recommended_long_side, plan.recommended_long_side)
     js.long_side = cap
-    js.segment_frames = min(121, plan.recommended_segment or 121)
+    geo = compute_geometry(src_w, src_h, cap or None)
+    js.segment_frames = min(121, plan.segment_for(max(geo.work_w, geo.work_h)) or 121)
     js.overlap = p.overlap
     js.quantization = js.offload = js.vae = "auto"
-    downscaled = compute_geometry(src_w, src_h, cap or None).downscaled
-    js.matte = MatteSettings(temporal=p.temporal, edge_refine=downscaled, edge_radius=3, edge_strength=0.5)
+    # Zpřesnění hrany podle originálu přiblížilo Turbo/Fast k Normal jen o ~1 % (tests/tune_edge_refine.py)
+    # a stojí ~0,2 s/snímek v exportu → v automatice vypnuto, v režimu Expert dostupné.
+    js.matte = MatteSettings(temporal=p.temporal, edge_refine=False, edge_radius=3, edge_strength=0.5)
     return js

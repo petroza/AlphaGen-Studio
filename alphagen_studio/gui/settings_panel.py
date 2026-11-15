@@ -43,7 +43,7 @@ RESOLUTIONS = [("Full (up to 1920×1088)", 0), ("1280 px", 1280), ("1024 px", 10
                ("960 px", 960), ("768 px", 768), ("640 px", 640), ("512 px", 512)]
 # Rychlostní profily: (klíč, název, max. delší strana masky (0 = plné), překryv úseků, proti blikání, popis)
 PROFILES = [
-    ("turbo", "Turbo", 768, 0, 0.3, "Matte at 768 px, refined against the source. Fastest – for previews and rough keys."),
+    ("turbo", "Turbo", 768, 0, 0.3, "Matte at 768 px. Fastest – for previews and rough keys."),
     ("fast", "Fast ★", 1280, 8, 0.3, "Recommended. Matte up to 1280 px, smooth transitions – 2× faster than Normal, "
      "the shape matches it by 93–98 %."),
     ("normal", "Normal", 0, 8, 0.3, "Full resolution (up to Full HD). Finest hair and motion blur – "
@@ -324,7 +324,12 @@ class SettingsPanel(QWidget):
     def max_segment(self) -> int:
         """Nejdelší úsek, který se na zvolené kartě vejde (ověřené limity, viz gpu.recommend)."""
         plan = self._recommended
-        return plan.recommended_segment if plan and plan.feasible and plan.recommended_segment else 121
+        if not (plan and plan.feasible and plan.recommended_segment):
+            return 121
+        if self.info:  # do 1280 px se vejde delší úsek (méně předělů a překryvů)
+            geo = compute_geometry(self.info.width, self.info.height, self.resolution.currentData() or None)
+            return plan.segment_for(max(geo.work_w, geo.work_h))
+        return plan.recommended_segment
 
     # ------------------------------------------------------------------
     def set_mode(self, mode: str) -> None:
@@ -369,7 +374,7 @@ class SettingsPanel(QWidget):
                     cb.setCurrentIndex(0)  # Automaticky
             res_idx = 0 if not cap else next((i for i, (_, v) in enumerate(RESOLUTIONS) if v and v <= cap), 0)
             self.resolution.setCurrentIndex(res_idx)
-            self.seg_len.setValue(min(121, self.max_segment()))
+            self.seg_len.setValue(min(121, self.max_segment()))  # max_segment zohlední rozlišení
             self.overlap.setValue(ov)
             downscaled = False
             if self.info:
@@ -378,11 +383,11 @@ class SettingsPanel(QWidget):
             if self.mode == "auto":
                 # Výchozí maska = výstup modelu + potlačení blikání okrajů; zpřesnění hrany jen když
                 # se maska počítala zmenšená (Turbo, 4K) – jinak by zbytečně měnilo výsledek modelu.
-                self._set_matte_widgets(MatteSettings(temporal=tf, edge_refine=downscaled, edge_radius=3,
+                self._set_matte_widgets(MatteSettings(temporal=tf, edge_refine=False, edge_radius=3,
                                                       edge_strength=0.5))
             else:
                 self.temporal.setValue(tf)
-                self.edge_refine.setChecked(downscaled)
+                self.edge_refine.setChecked(False)
         finally:
             self._loading = False
         self._plan_changed()
@@ -491,7 +496,7 @@ class SettingsPanel(QWidget):
         lines = [
             f"<b>Speed:</b> {name}",
             f"<b>Matte:</b> {geo.work_w}×{geo.work_h}"
-            + (f" (downscaled from {geo.src_w}×{geo.src_h}, then refined against the source)" if geo.downscaled
+            + (f" (downscaled from {geo.src_w}×{geo.src_h})" if geo.downscaled
                else " – full clip resolution"),
             f"<b>Compute:</b> {len(segs)} segment(s) of ≤{self.seg_len.value()} frames"
             + (", transitions smoothly blended" if self.overlap.value() and len(segs) > 1 else ""),

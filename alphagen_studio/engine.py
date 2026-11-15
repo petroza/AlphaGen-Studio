@@ -8,6 +8,7 @@ s jinými parametry masky lze spustit znovu bez další inference.
 from __future__ import annotations
 
 import hashlib
+import os
 import json
 import shutil
 import threading
@@ -336,6 +337,7 @@ class Engine:
             models["video_vae"] = self.models.conv_vae_path()
             L.log("INFO", "Decoder: convolutional video VAE (low-memory mode).")
         cfg = {"models": models, "quantization": q, "offload": o,
+               "cache_dir": str(Path(self.settings.cache_dir) / "prompt_embeddings"),
                "lora_strength": 1.0, "conditioning_strength": 1.0, "probe_video": str(probe_video)}
         key = (js.gpu_index, q, o, json.dumps(cfg["models"], sort_keys=True))
         if self.client and self.client.alive() and self._client_key == key:
@@ -439,16 +441,34 @@ class Engine:
         t0 = time.time()
         written = 0
 
-        def emit(alpha_raw: np.ndarray, rgb: np.ndarray) -> None:
-            nonlocal written
+        # Úprava masky (zpřesnění hrany, morfologie, despill) je na snímek nezávislá → paralelně ve vláknech
+        # (numpy/OpenCV uvolňují GIL); zápis zůstává v původním pořadí snímků.
+        from collections import deque
+        from concurrent.futures import ThreadPoolExecutor
+
+        workers = max(2, min(12, (os.cpu_count() or 4) - 2))
+        pool = ThreadPoolExecutor(max_workers=workers)
+        inflight: deque = deque()
+
+        def compute(alpha_raw: np.ndarray, rgb: np.ndarray):
             a = process_frame(alpha_raw, rgb, ms)
             color = apply_color(rgb, a, ms) if ms.despill != "off" else None
-            exporter.write(rgb, a, color)
-            written += 1
-            if written % 5 == 0 or written == total:
-                rate = written / max(1e-3, time.time() - t0)
-                L.progress(written, total, (total - written) / rate if written >= 10 else None,
-                           f"Exporting frame {written}/{total}")
+            return rgb, a, color
+
+        def drain(limit: int) -> None:
+            nonlocal written
+            while len(inflight) > limit:
+                rgb, a, color = inflight.popleft().result()
+                exporter.write(rgb, a, color)
+                written += 1
+                if written % 5 == 0 or written == total:
+                    rate = written / max(1e-3, time.time() - t0)
+                    L.progress(written, total, (total - written) / rate if written >= 10 else None,
+                               f"Exporting frame {written}/{total}")
+
+        def emit(alpha_raw: np.ndarray, rgb: np.ndarray) -> None:
+            inflight.append(pool.submit(compute, alpha_raw, rgb))
+            drain(workers * 2)
 
         try:
             for f, rgb in enumerate(reader):
@@ -466,10 +486,13 @@ class Engine:
             if smoother is not None:
                 for a in smoother.flush():
                     emit(a, pending_rgb.pop(0))
+            drain(0)
             report = exporter.close()
         except BaseException:
             exporter.abort()
             raise
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
         report.update({"geometry": geo.to_dict(), "segments": len(cache.segs), "job_dir": str(job_dir),
                        "seconds_export": round(time.time() - t0, 1)})
         for key, chk in report.get("checks", {}).items():
