@@ -178,6 +178,19 @@ over blue; times = one 49-frame segment on the RTX 4070 Ti). Footage © Getty Im
 
 ![Turbo vs Fast vs Normal](docs/results_hair.jpg)
 
+**Backlit hair** – 1280×656, 33-frame segment, lightweight VAE, ~76 s on the RTX 4070 Ti.
+Columns: source · alpha matte · over checkerboard · over blue.
+
+![Backlit hair key](docs/results_backlit_hair.jpg)
+
+**Against the official Lightricks result** – columns: source · official AlphaGen output (alpha recovered from
+their composite) · AlphaGen Studio on the RTX 4070 Ti · absolute difference. Mean alpha error 0.012,
+shape IoU 0.961; differences are only in the finest strands.
+
+![AlphaGen Studio vs. official reference](docs/results_vs_lightricks.jpg)
+
+*Example footage: Lightricks, [AlphaGen model card](https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Alpha-Gen).*
+
 **Longer clips** (4 segments, overlap 8, Full-resolution 1280×656 source, ProRes 4444 + PNG matte + preview):
 150 frames → **370 s total** (≈ 2.5 s per frame including export), 145 frames → 368 s.
 Export itself (blending, matte refinement, ProRes 4444 + PNG + H.264 writing and ProRes alpha verification)
