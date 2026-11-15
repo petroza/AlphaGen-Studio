@@ -173,6 +173,11 @@ and export (wall-clock).
 | 1280×720 | Turbo | 768×432 | 55 s | 68 s | 7.7 GB |
 | 1280×720 | Fast ★ / Normal | 1280×720 | 103 s | 112 s | 7.7 GB |
 
+**Visual comparison** – hair against the sky, Full HD source, frame 24 (top: alpha matte, bottom: composite
+over blue; times = one 49-frame segment on the RTX 4070 Ti). Footage © Getty Images.
+
+![Turbo vs Fast vs Normal](docs/results_hair.jpg)
+
 **Longer clips** (4 segments, overlap 8, Full-resolution 1280×656 source, ProRes 4444 + PNG matte + preview):
 150 frames → **370 s total** (≈ 2.5 s per frame including export), 145 frames → 368 s.
 Export itself (blending, matte refinement, ProRes 4444 + PNG + H.264 writing and ProRes alpha verification)
