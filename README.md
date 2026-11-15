@@ -151,6 +151,60 @@ whole pipeline (with a test worker that is **not AI**), resume, batch queue.
 - Segments are inferred independently; a hard cut inside a clip can change the chosen subject.
 - H.264 luma matte is 8-bit and lossy – use PNG 16-bit or ProRes 4444 for the finest detail.
 
+## Benchmarks
+
+**Test system:** NVIDIA GeForce **RTX 4070 Ti 12 GB** (driver 621.01) · AMD Ryzen 9 7950X3D · 128 GB RAM ·
+NVMe SSD · Windows 11 Pro · PyTorch 2.13.0 + CUDA 13.2 · LTX-2 commit `f0f2f86` · measured 2026-11-14/15.
+Model weights streamed from RAM (`--offload cpu`), full bf16 precision, lightweight (convolutional) VAE –
+i.e. what *Automatic* picks on this machine.
+
+**Speed profiles** – one segment of 49 frames, outputs: luma matte H.264 + 16-bit PNG matte.
+*Segment* = AlphaGen inference only; *Total* = whole job incl. worker start, model load, inference
+and export (wall-clock).
+
+| Source | Profile | Matte computed at | Segment (49 fr.) | Total job | Peak VRAM |
+|---|---|---|---|---|---|
+| 1920×1080 | Turbo | 768×432 | 66 s | 108 s | 7.7 GB |
+| 1920×1080 | Fast ★ | 1280×720 | 106 s | 147 s | 7.7 GB |
+| 1920×1080 | Normal | 1920×1080 | 227 s | 240 s | 9.2 GB |
+| 1920×1080 | Turbo | 768×432 | 55 s | 92 s | 7.7 GB |
+| 1920×1080 | Fast ★ | 1280×720 | 103 s | 134 s | 7.7 GB |
+| 1920×1080 | Normal | 1920×1080 | 227 s | 240 s | 9.2 GB |
+| 1280×720 | Turbo | 768×432 | 55 s | 68 s | 7.7 GB |
+| 1280×720 | Fast ★ / Normal | 1280×720 | 103 s | 112 s | 7.7 GB |
+
+**Longer clips** (4 segments, overlap 8, Full-resolution 1280×656 source, ProRes 4444 + PNG matte + preview):
+150 frames → **370 s total** (≈ 2.5 s per frame including export), 145 frames → 368 s.
+Export itself (blending, matte refinement, ProRes 4444 + PNG + H.264 writing and ProRes alpha verification)
+takes roughly 10–20 s per 150 frames at 720p; the rest is inference.
+
+**Decoder / precision on the same card** (1280×656, 33 frames per segment):
+
+| Variant | Segment time | Peak VRAM | Matte vs. official Lightricks result |
+|---|---|---|---|
+| DiffVAE (as in the docs) | 107 s | 7.7 GB | MAE 0.0121, IoU 0.961 |
+| Lightweight convolutional VAE | 76 s | 7.7 GB | MAE 0.0118, IoU 0.961 |
+| DiffVAE at 1280 px with 49+ frames, or at 1920 px | – | – | does not fit in 12 GB |
+| Full HD, 49 frames, convolutional VAE | 227 s | 9.2 GB | ✔ |
+
+Rule of thumb on an RTX 4070 Ti: **~2 s per frame (Fast, Full HD source)**, ~4.6 s per frame (Normal, Full HD),
+~1.1–1.4 s per frame (Turbo). Faster GPUs (RTX 4090, RTX PRO 6000) were not tested.
+
+## Credits
+
+AlphaGen Studio is only a desktop front-end – all the AI work is done by models created by
+**[Lightricks](https://www.lightricks.com/)**. Huge thanks to the LTX team for releasing
+**LTX-2 / LTX-2.5** and the **AlphaGen IC-LoRA** as open weights, together with the inference code,
+documentation and reference examples:
+
+- [LTX-2 – official code](https://github.com/Lightricks/LTX-2) (Apache-2.0)
+- [LTX-2.5 model weights](https://huggingface.co/Lightricks/LTX-2.5)
+- [LTX-2.5 22B IC-LoRA AlphaGen](https://huggingface.co/Lightricks/LTX-2.5-22b-IC-LoRA-Alpha-Gen)
+- [AlphaGen documentation](https://docs.ltx.io/open-source-model/vfx-post-production/alpha-gen)
+
+Also thanks to the projects this app is built on: PyTorch, Hugging Face (hosting and `transformers`),
+Google Gemma (text encoder used by LTX-2.5), FFmpeg, Qt / PySide6, OpenCV, OpenEXR and uv.
+
 ## License
 
 AlphaGen Studio code: **MIT** (see [LICENSE](LICENSE)).
