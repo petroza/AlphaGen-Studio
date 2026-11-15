@@ -8,7 +8,7 @@ with the official [`ltx_pipelines`](https://github.com/Lightricks/LTX-2) code.
 The model produces an **alpha matte**; it is applied to the **original RGB** – the image of the
 person is never re-generated.
 
-![AlphaGen Studio](docs/screenshot.png)
+![AlphaGen Studio](docs/hero_before_after.png)
 
 *Before / After view of a real AlphaGen key computed on an RTX 4070 Ti – backlit hair, no green screen
 (example footage: Lightricks AlphaGen model card).*
@@ -33,6 +33,9 @@ person is never re-generated.
    - paste it in **Models → Model Manager** and click **Download missing**
      (also fetches the lightweight VAE that enables Full HD on 12–24 GB cards).
 4. Drop a video into the app and press **Start processing**. That's it.
+
+> **Before using it at work:** companies with annual revenues of USD 10M+ need a paid commercial license
+> from Lightricks for production use of the models – see [License](#license).
 
 The app starts in **Automatic** mode with the recommended **Fast ★** speed and outputs a
 **luma matte H.264 MP4** (for After Effects *Track Matte → Luma*) plus a **preview MP4**.
@@ -228,6 +231,22 @@ Google Gemma (text encoder used by LTX-2.5), FFmpeg, Qt / PySide6, OpenCV, OpenE
 
 ## License
 
-AlphaGen Studio code: **MIT** (see [LICENSE](LICENSE)).
-Model weights (not included, downloaded by each user): **LTX-2.x Community License** (Lightricks) – each user must accept it on Hugging Face.
-LTX-2 code: Apache-2.0. FFmpeg, PySide6 (LGPL), OpenCV, OpenEXR under their own licenses.
+**AlphaGen Studio** (this repository's code) – © 2026 **Petr Závorka**, released under the **MIT License**
+([LICENSE](LICENSE)). The MIT license covers only this application's code.
+
+**Not covered by MIT** – each under its own license, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md):
+
+- **LTX-2.5 / AlphaGen model weights** – © Lightricks, **LTX-2.x Community License**
+  ([copy](licenses/LTX-2.x-Community-License.txt)). Not included; every user downloads them and accepts the
+  license on Hugging Face.
+- **LTX-2 inference code** – © Lightricks, Apache-2.0 (installed by `setup.bat`).
+- Gemma-based text encoder (Google Gemma terms), FFmpeg, PySide6/Qt (LGPL), PyTorch, OpenCV, OpenEXR …
+- Example footage in `docs/` – © Lightricks / © Getty Images.
+
+> ⚠️ **Commercial use of the models:** under the LTX-2.x Community License, organizations with annual
+> revenues of **USD 10 million or more** need a **paid commercial license from Lightricks**
+> (licensing@ltx.io) for any production use – free use is limited to testing and evaluation in a
+> non-production environment and to personal non-commercial use. The MIT license of AlphaGen Studio does
+> not change this. Not legal advice – read the full license text.
+
+AlphaGen Studio is an independent project, not affiliated with or endorsed by Lightricks.

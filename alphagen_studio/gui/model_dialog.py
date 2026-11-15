@@ -50,6 +50,12 @@ class ModelDialog(QDialog):
             "The official Lightricks files are required (~67.5 GB in total). The repositories are gated: sign in to "
             "Hugging Face, open both pages below, accept the LTX-2.x Community License and create a token "
             "with read access (Settings → Access Tokens). Once downloaded, inference runs fully locally."))
+        warn = dim_label(
+            "⚠ License: the models are © Lightricks under the LTX-2.x Community License. Organizations with annual "
+            "revenues of USD 10M+ need a paid commercial license from Lightricks (licensing@ltx.io) for production "
+            "use; free use covers testing/evaluation and personal non-commercial use. By downloading you accept "
+            "that license and its use restrictions.", name="Warn")
+        lay.addWidget(warn)
         links = QHBoxLayout()
         for repo in (BASE_REPO, ALPHA_REPO):
             b = QPushButton(f"Open {repo}")
