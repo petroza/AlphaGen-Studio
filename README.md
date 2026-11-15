@@ -10,6 +10,9 @@ person is never re-generated.
 
 ![AlphaGen Studio](docs/screenshot.png)
 
+*Before / After view of a real AlphaGen key computed on an RTX 4070 Ti – backlit hair, no green screen
+(example footage: Lightricks AlphaGen model card).*
+
 | Automatic mode | Expert mode | Batch queue |
 |---|---|---|
 | ![Automatic](docs/settings_automatic.png) | ![Expert](docs/settings_expert.png) | ![Queue](docs/queue.png) |
