@@ -16,7 +16,7 @@ person is never re-generated.
 
 1. **Download** this repository (green *Code* button → *Download ZIP*, unzip e.g. to `D:\AlphaGen Studio`)
    or `git clone https://github.com/petroza/AlphaGen-Studio.git`.
-2. Run **`setup.bat`** (one time, ~10 min, downloads ~8 GB of Python/PyTorch/CUDA libraries).
+2. Install **Python** and **Git** if you don't have them (see Requirements), then run **`setup.bat`** (one time, ~10 min, downloads ~8 GB of Python/PyTorch/CUDA libraries).
 3. Run **`start.bat`**. On first start the app offers to download the models (~67 GB, one time):
    - log in at [huggingface.co](https://huggingface.co), open
      [Lightricks/LTX-2.5](https://huggingface.co/Lightricks/LTX-2.5) and
@@ -90,7 +90,9 @@ BT.601/709/2020 color matrices, 10/12-bit sources and audio are handled.
 - Disk: ~70 GB for models + ~8 GB for the environment
 - RAM: 64 GB+ recommended (the model is streamed from RAM on 12–24 GB cards; with ≥96 GB
   the app uses full bf16 precision, which gave a cleaner matte than FP8 at the same speed)
-- Git (for `setup.bat`; installs with `winget install Git.Git`), FFmpeg (setup installs it via winget)
+- **Python 3.10+** from [python.org](https://www.python.org/downloads/) (or `winget install Python.Python.3.12`) –
+  `setup.bat` uses it only to install [uv](https://docs.astral.sh/uv/), which then manages everything else
+- **Git** (`winget install Git.Git`); FFmpeg is installed by `setup.bat` via winget if missing
 
 | GPU | Automatic picks | Status |
 |---|---|---|
