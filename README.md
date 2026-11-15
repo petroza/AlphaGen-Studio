@@ -10,6 +10,10 @@ person is never re-generated.
 
 ![AlphaGen Studio](docs/screenshot.png)
 
+| Automatic mode | Expert mode | Batch queue |
+|---|---|---|
+| ![Automatic](docs/settings_automatic.png) | ![Expert](docs/settings_expert.png) | ![Queue](docs/queue.png) |
+
 ---
 
 ## Quick start (for artists)
