@@ -181,6 +181,11 @@ class SettingsPanel(QWidget):
         self.overlap.valueChanged.connect(self._manual_changed)
         self.row_overlap = self._row(v, "Segment overlap", self.overlap,
                                      "Frames blended where two segments meet, so the matte doesn't jump.")
+        self.scene_cuts = QCheckBox("Split at scene cuts")
+        self.scene_cuts.setChecked(True)
+        self.scene_cuts.setToolTip("Edited footage: detects hard cuts and processes every shot separately, so a "
+                                   "segment never mixes two shots. Costs a few seconds of scanning.")
+        v.addWidget(self.scene_cuts)
         lay.addWidget(self.g_res)
         self.plan_label = dim_label("")
         lay.addWidget(self.plan_label)
@@ -552,6 +557,7 @@ class SettingsPanel(QWidget):
     def state(self) -> dict:
         return {"defaults_version": DEFAULTS_VERSION, "mode": self.mode, "profile": self.profile, "resolution": self.resolution.currentIndex(),
                 "seg": self.seg_len.value(), "overlap": self.overlap.value(), "seed": self.seed.value(),
+                "scene_cuts": self.scene_cuts.isChecked(),
                 "quant": self.quant.currentIndex(), "offload": self.offload.currentIndex(),
                 "vae": self.vae.currentIndex(), "matte": self.matte_settings().to_dict(),
                 "export": self.export_settings().to_dict(), "out_dir": self.out_dir.text()}
@@ -579,6 +585,7 @@ class SettingsPanel(QWidget):
                 self.resolution.setCurrentIndex(st.get("resolution", 0))
                 self.seg_len.setValue(st.get("seg", 49))
                 self.overlap.setValue(st.get("overlap", 8))
+                self.scene_cuts.setChecked(st.get("scene_cuts", True))
                 self.seed.setValue(st.get("seed", 1234))
                 self.quant.setCurrentIndex(st.get("quant", 0))
                 self.offload.setCurrentIndex(st.get("offload", 0))

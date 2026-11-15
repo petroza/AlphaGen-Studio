@@ -188,6 +188,21 @@ def plan_segments(total: int, seg_len: int = RECOMMENDED_MAX_FRAMES, overlap: in
     return segs
 
 
+def plan_segments_shots(total: int, seg_len: int = RECOMMENDED_MAX_FRAMES, overlap: int = 8,
+                        cuts: list[int] | None = None) -> list[Segment]:
+    """Jako :func:`plan_segments`, ale každý záběr (mezi střihy ``cuts``) zvlášť.
+
+    Segment nikdy nepřekročí střih a na střihu se neprolíná (ramp 0) – model by jinak
+    viděl dva různé záběry v jednom segmentu.
+    """
+    bounds = [0] + sorted({int(c) for c in (cuts or []) if 0 < int(c) < total}) + [total]
+    segs: list[Segment] = []
+    for a, b in zip(bounds, bounds[1:]):
+        for s in plan_segments(b - a, seg_len, overlap):
+            segs.append(Segment(len(segs), a + s.start, s.length, s.model_frames, s.ramp_in, s.ramp_out))
+    return segs
+
+
 def segment_weights(seg: Segment, is_first: bool, is_last: bool) -> np.ndarray:
     """Váhy snímků segmentu pro prolnutí (lineární rampa přes celý překryv)."""
     w = np.ones(seg.length, dtype=np.float32)

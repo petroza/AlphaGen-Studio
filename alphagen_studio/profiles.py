@@ -49,4 +49,5 @@ def apply_profile(js, key: str, src_w: int, src_h: int, gpu: GpuInfo | None, ram
     # Zpřesnění hrany podle originálu přiblížilo Turbo/Fast k Normal jen o ~1 % (tests/tune_edge_refine.py)
     # a stojí ~0,2 s/snímek v exportu → v automatice vypnuto, v režimu Expert dostupné.
     js.matte = MatteSettings(temporal=p.temporal, edge_refine=False, edge_radius=3, edge_strength=0.5)
+    js.auto_despill = True
     return js

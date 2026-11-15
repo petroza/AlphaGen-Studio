@@ -41,12 +41,15 @@ class BottomPanel(QWidget):
         self.start_btn = QPushButton("▶  Start processing")
         self.start_btn.setObjectName("Primary")
         self.start_btn.setToolTip("AlphaGen inference (resumes from finished segments) + export")
+        self.quick_btn = QPushButton("⚡  Quick test (2 s)")
+        self.quick_btn.setToolTip("Turbo on ~2 seconds around the current frame (~30–60 s). Shows what the model "
+                                  "picks as the subject – Before / After in the viewer; only a temporary matte goes to the cache.")
         self.export_btn = QPushButton("Export only")
         self.export_btn.setToolTip("Re-export with the current matte refinement – no new inference")
         self.cancel_btn = QPushButton("■  Cancel")
         self.cancel_btn.setObjectName("Danger")
         self.cancel_btn.setEnabled(False)
-        for b in (self.start_btn, self.export_btn, self.cancel_btn):
+        for b in (self.start_btn, self.quick_btn, self.export_btn, self.cancel_btn):
             b.setMinimumWidth(170)
             left.addWidget(b)
         left.addStretch(1)
@@ -100,6 +103,7 @@ class BottomPanel(QWidget):
     # ------------------------------------------------------------------
     def set_running(self, running: bool) -> None:
         self.start_btn.setEnabled(not running)
+        self.quick_btn.setEnabled(not running)
         self.export_btn.setEnabled(not running)
         self.cancel_btn.setEnabled(running)
 

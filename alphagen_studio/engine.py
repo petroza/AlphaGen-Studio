@@ -21,6 +21,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from . import scenecuts
 from .backend.client import BackendError, Cancelled, WorkerClient
 from .config import AppSettings
 from .export import Exporter, ExportSettings
@@ -35,8 +36,9 @@ from .segmentation import (
     crop_pad,
     pad_frame,
     plan_segments,
+    plan_segments_shots,
 )
-from .video_io import FFmpegWriter, FrameReader, VideoError, VideoInfo, normalize_vfr, probe, read_frames
+from .video_io import FFmpegWriter, FrameReader, VideoError, VideoInfo, normalize_vfr, probe, read_frame, read_frames
 
 log = get_logger("engine")
 ENGINE_VERSION = 1
@@ -55,6 +57,8 @@ class JobSettings:
     offload: str = "auto"
     pad_mode: str = "edge"
     vae: str = "auto"  # auto | diffvae (dokumentace) | conv (oficiální úsporný konvoluční VAE)
+    auto_despill: bool = False  # Automatic: pozná zelenou/modrou stěnu a zapne odstranění lemu
+    scene_cuts: bool = True  # úseky se lámou na střizích (segment nikdy nepřekročí střih)
     matte: MatteSettings = field(default_factory=MatteSettings)
     export: ExportSettings = field(default_factory=ExportSettings)
     output_dir: str = ""
@@ -90,6 +94,7 @@ class JobListener:
     def stage(self, text: str) -> None: ...
     def progress(self, done: int, total: int, eta_s: float | None, detail: str) -> None: ...
     def segment_done(self, index: int, total: int) -> None: ...
+    def planned(self, cache: "MatteCache", in_frame: int) -> None: ...
     def finished(self, report: dict) -> None: ...
     def failed(self, message: str, kind: str, suggestions: list[str]) -> None: ...
 
@@ -199,7 +204,10 @@ class Engine:
         self.worker_override: tuple[str, Path] | None = None
 
     # ------------------------------------------------------------------
-    def prepare(self, input_path: str, js: JobSettings) -> tuple[VideoInfo, Geometry, list[Segment], Path, int]:
+    def _cuts_dir(self) -> Path:
+        return Path(self.settings.cache_dir) / "scene_cuts"
+
+    def prepare(self, input_path: str, js: JobSettings, L: JobListener | None = None) -> tuple[VideoInfo, Geometry, list[Segment], Path, int]:
         ffprobe = self.settings.ffprobe_path()
         info = probe(input_path, ffprobe)
         if info.is_vfr:
@@ -207,7 +215,22 @@ class Engine:
             if not cfr.exists():
                 normalize_vfr(info, self.settings.ffmpeg_path(), cfr)
             info = probe(str(cfr), ffprobe)
+        if js.scene_cuts and L is not None:
+            out = info.nb_frames if js.out_frame is None else min(js.out_frame, info.nb_frames)
+            if 0 <= js.in_frame < out and scenecuts.cached(info, js.in_frame, out - js.in_frame, self._cuts_dir()) is None:
+                L.stage("Detecting scene cuts")
+                n = out - js.in_frame
+                try:
+                    scenecuts.detect(info, self.settings.ffmpeg_path(), js.in_frame, n, self._cuts_dir(),
+                                     progress=lambda i, c: L.progress(i, c, None, f"Scanning for cuts {i}/{c}"),
+                                     cancel=self.cancel)
+                except InterruptedError:
+                    raise Cancelled() from None
         geo, segs, job_dir, total, key = self.plan_job(info, js)
+        cuts = key.get("cuts", [])
+        if cuts and L is not None:
+            at = ", ".join(str(js.in_frame + c) for c in cuts[:12]) + (" …" if len(cuts) > 12 else "")
+            L.log("INFO", f"Detected {len(cuts)} scene cut(s) at frame {at} – each shot is processed separately.")
         job_dir.mkdir(parents=True, exist_ok=True)
         meta = {"key": key, "info": info.to_dict(), "geometry": geo.to_dict(),
                 "segments": [s.to_dict() for s in segs], "total": total}
@@ -221,9 +244,12 @@ class Engine:
             raise VideoError(f"Invalid IN/OUT range: {js.in_frame}–{out}")
         total = out - js.in_frame
         geo = compute_geometry(info.width, info.height, js.long_side or None)
-        segs = plan_segments(total, js.segment_frames, js.overlap)
+        cuts = (scenecuts.cached(info, js.in_frame, total, self._cuts_dir()) or []) if js.scene_cuts else []
+        segs = plan_segments_shots(total, js.segment_frames, js.overlap, cuts)
         js.vae = resolve_vae(js.vae, self.gpu_total_gb, self.models.has_conv_vae())
         key = js.inference_key(info, geo)
+        if cuts:
+            key["cuts"] = cuts
         src = Path(info.seq_pattern).parent if info.is_sequence else Path(info.path)
         st = src.stat()
         key["mtime"], key["size"] = st.st_mtime, st.st_size
@@ -287,7 +313,7 @@ class Engine:
         L.stage("Analyzing input")
         if gpu_total_gb:
             self.gpu_total_gb = gpu_total_gb
-        info, geo, segs, job_dir, total = self.prepare(input_path, js)
+        info, geo, segs, job_dir, total = self.prepare(input_path, js, L)
         for w in info.warnings:
             L.log("WARNING", w)
         L.log("INFO", geo.describe_cs())
@@ -297,6 +323,7 @@ class Engine:
             L.log("WARNING", f"Actual matte working resolution is {geo.work_w}×{geo.work_h}; "
                              f"the matte is upscaled to {geo.src_w}×{geo.src_h}.")
         cache = MatteCache(job_dir, segs, geo, total)
+        L.planned(cache, js.in_frame)
         todo = [k for k in range(len(segs)) if not cache.segment_ready(k)]
         if export_only and todo:
             raise VideoError(f"{len(todo)} matte segment(s) missing – run processing first.")
@@ -357,6 +384,27 @@ class Engine:
         L.log("INFO", f"Model loaded in {ev.get('seconds')} s.")
         self._client_key = key
         return self.client
+
+    def _auto_despill(self, info, cache: MatteCache, total: int, js: JobSettings, L) -> MatteSettings:  # noqa: N803
+        """Zelená/modrá stěna za postavou → zapnout odstranění zeleného/modrého lemu (jen RGB okraje)."""
+        from dataclasses import replace as dc_replace
+
+        from .postprocess import detect_chroma_screen
+
+        idx = sorted({0, total // 2, max(0, total - 1)})
+        try:
+            rgbs = [read_frame(info, self.settings.ffmpeg_path(), js.in_frame + i) for i in idx]
+            kind = detect_chroma_screen(rgbs, [cache.raw(i) for i in idx])
+        except (VideoError, OSError):
+            kind = None
+        if kind:
+            L.log("INFO", f"Detected a {kind} screen behind the subject – removing {kind} spill from the edges.")
+            if not set(js.export.formats) & {"prores4444", "rgba_png", "rgba_exr"}:
+                L.log("WARNING", f"Tip: the luma matte keeps the original RGB, so the {kind} fringe stays visible when "
+                                 "you composite the source in After Effects – also export ProRes 4444 with alpha "
+                                 "(it contains the cleaned colors).")
+            return dc_replace(js.matte, despill=kind, despill_strength=1.0)
+        return js.matte
 
     # ------------------------------------------------------------------
     def _record_perf(self, geo: Geometry, frames: int, seconds: float, js: JobSettings) -> None:
@@ -434,9 +482,13 @@ class Engine:
         base = js.base_name or f"{Path(info.path).stem}_alphagen"
         ffmpeg, ffprobe = self.settings.ffmpeg_path(), self.settings.ffprobe_path()
         ms = js.matte
+        if js.auto_despill and ms.despill == "off":
+            ms = self._auto_despill(info, cache, total, js, L)
         exporter = Exporter(info, js.export, out_dir, base, js.in_frame, total, ffmpeg, ffprobe)
         reader = FrameReader(info, ffmpeg, js.in_frame, total)
         smoother = TemporalSmoother(ms.temporal) if ms.temporal > 0 else None
+        # začátky záběrů (střih = segment bez prolnutí na začátku) – anti-flicker nesmí míchat přes střih
+        shot_starts = {s.start for s in cache.segs if s.start > 0 and s.ramp_in == 0}
         pending_rgb: list[np.ndarray] = []
         t0 = time.time()
         written = 0
@@ -478,6 +530,10 @@ class Engine:
                 if smoother is None:
                     emit(raw, rgb)
                     continue
+                if f in shot_starts:
+                    for a in smoother.flush():
+                        emit(a, pending_rgb.pop(0))
+                    smoother = TemporalSmoother(ms.temporal)
                 pending_rgb.append(rgb.copy())
                 for a in smoother.push(raw):
                     emit(a, pending_rgb.pop(0))

@@ -48,8 +48,14 @@ Nothing else needs to be set – the app detects your GPU and RAM and picks safe
 - Automatic subject separation: people and their movement, hair, motion blur, smoke, sheer fabric.
 - **The model picks the foreground itself.** There is no subject selection by click, prompt or mask
   (the official model does not support it).
+- **⚡ Quick test** – one click runs Turbo on ~2 seconds around the current frame (~50 s) and shows
+  *Before / After* in the viewer, so you see what the model picks as the subject before a long job.
 - Long clips are split into segments of 8n+1 frames (model limit 145, recommended ≤121) with
   overlapping, cross-faded transitions – no visible jumps.
+- **Edited footage:** hard cuts are detected (a few seconds of scanning, cached) and every shot is
+  processed separately – a segment never mixes two shots and anti-flicker never blends across a cut.
+- **Green / blue screen:** in *Automatic* the app recognizes a chroma backdrop and removes the color
+  fringe from the RGB in color outputs (ProRes 4444, PNG, EXR). The matte itself is unchanged.
 - Resume: finished segments are cached; a stopped or crashed job continues where it left off.
 - **Batch queue** for overnight jobs (tab *Queue*): add clips or whole folders, run, optionally shut
   down the PC when finished. The queue survives a restart.
@@ -143,16 +149,18 @@ reference it gave the same matte quality (MAE 0.0118 vs 0.0121) at ~30 % less ti
 
 ## Tests
 
-`run_tests.bat` – ~90 automated tests: frame-accurate decoding (H.264 with B-frames, HEVC, ProRes
+`run_tests.bat` – ~100 automated tests: frame-accurate decoding (H.264 with B-frames, HEVC, ProRes
 10-bit 23.976, PNG sequences), rotation, color matrices, geometry/segmentation for 1–7777 frames,
 cross-fade continuity, all export formats incl. decoded ProRes alpha, end-to-end frame sync through the
-whole pipeline (with a test worker that is **not AI**), resume, batch queue.
+whole pipeline (with a test worker that is **not AI**), resume, batch queue, scene-cut detection
+(exact cuts, no false cuts on flashes/fast motion) and frame sync across a cut.
 `run_tests.bat -m gpu` runs a real AlphaGen inference (needs models).
 
 ## Limitations
 
 - The model decides what the foreground is; ambiguous scenes (e.g. many curtains) can include
-  background parts – check with a quick Turbo test.
+  background parts – check with **⚡ Quick test**.
+- Cut detection finds hard cuts only; dissolves/cross-fades are treated as one shot.
 - Output above 1920×1088 is computed downscaled and upscaled (with optional edge refinement).
 - Segments are inferred independently; a hard cut inside a clip can change the chosen subject.
 - H.264 luma matte is 8-bit and lossy – use PNG 16-bit or ProRes 4444 for the finest detail.

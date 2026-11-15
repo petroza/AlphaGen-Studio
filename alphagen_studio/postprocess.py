@@ -229,6 +229,37 @@ def chroma_despill(rgb: np.ndarray, a: np.ndarray, channel: str, strength: float
     return np.clip(I, 0.0, 1.0)
 
 
+def detect_chroma_screen(rgbs: list[np.ndarray], alphas: list[np.ndarray]) -> str | None:
+    """Pozná zelenou/modrou stěnu za postavou (green/blue screen) → vrátí "green" / "blue" / None.
+
+    Bere jen pixely, které model označil jako pozadí (alfa < 0,05). Klíčovací stěna = pozadí tvoří
+    aspoň 15 % obrazu, je světlé a rovnoměrné (průměrný jas ≥ 0,3, rozptyl ≤ 0,18) a aspoň 60 % jeho
+    pixelů je syté (S > 0,35) ve správném odstínu.
+    """
+    votes: dict[str, int] = {"green": 0, "blue": 0}
+    for rgb, a in zip(rgbs, alphas):
+        u8 = rgb if rgb.dtype == np.uint8 else (rgb >> 8).astype(np.uint8) if rgb.dtype == np.uint16 else \
+            np.round(np.clip(rgb, 0, 1) * 255).astype(np.uint8)
+        small = cv2.resize(u8, (320, max(2, int(320 * u8.shape[0] / u8.shape[1]))), interpolation=cv2.INTER_AREA)
+        am = cv2.resize(a.astype(np.float32), (small.shape[1], small.shape[0]), interpolation=cv2.INTER_AREA)
+        bg = am < 0.05
+        if bg.mean() < 0.15:
+            continue
+        hsv = cv2.cvtColor(small, cv2.COLOR_RGB2HSV)
+        h, s = hsv[..., 0][bg].astype(np.float32), hsv[..., 1][bg].astype(np.float32) / 255
+        v = hsv[..., 2][bg].astype(np.float32) / 255
+        # klíčovací stěna je světlá a rovnoměrná – tmavé noční nebe nebo modrá bunda v pozadí ne
+        if v.mean() < 0.3 or v.std() > 0.18:
+            continue
+        sat = (s > 0.35) & (v > 0.25)
+        if (sat & (h >= 35) & (h <= 85)).mean() >= 0.6:  # OpenCV H 0..180 → zelená 70–170°
+            votes["green"] += 1
+        elif (sat & (h >= 95) & (h <= 130)).mean() >= 0.6:  # modrá 190–260°
+            votes["blue"] += 1
+    best = max(votes, key=votes.get)
+    return best if votes[best] >= max(1, (len(rgbs) + 1) // 2) else None
+
+
 def apply_color(rgb: np.ndarray, a: np.ndarray, s: MatteSettings) -> np.ndarray | None:
     """Vrátí upravené RGB (float 0..1) nebo None, pokud se barva nemění."""
     if s.despill == "edge":

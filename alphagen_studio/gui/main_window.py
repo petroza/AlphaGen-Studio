@@ -43,6 +43,7 @@ class QtListener(QObject, JobListener):
     sig_stage = Signal(str)
     sig_progress = Signal(int, int, object, str)
     sig_segment = Signal(int, int)
+    sig_planned = Signal(object, int)
     sig_finished = Signal(dict)
     sig_failed = Signal(str, str, list)
 
@@ -60,6 +61,9 @@ class QtListener(QObject, JobListener):
 
     def segment_done(self, index, total):
         self.sig_segment.emit(index, total)
+
+    def planned(self, cache, in_frame):
+        self.sig_planned.emit(cache, in_frame)
 
     def finished(self, report):
         self.sig_finished.emit(report)
@@ -202,12 +206,14 @@ class MainWindow(QMainWindow):
         self.settings_panel.matteChanged.connect(self.preview.set_matte_settings)
         self.settings_panel.planChanged.connect(self._update_cache_link)
         self.bottom.start_btn.clicked.connect(lambda: self.start(False))
+        self.bottom.quick_btn.clicked.connect(self.quick_test)
         self.bottom.export_btn.clicked.connect(lambda: self.start(True))
         self.bottom.cancel_btn.clicked.connect(self.cancel)
         L = self.listener  # noqa: N806
         L.sig_log.connect(self.bottom.append_log)
         L.sig_stage.connect(self._on_stage)
         L.sig_progress.connect(self.bottom.set_progress)
+        L.sig_planned.connect(lambda c, a: self.preview.set_cache(c, a))
         L.sig_segment.connect(lambda i, n: self.preview.refresh_ready() or self.preview.refresh())
         L.sig_finished.connect(self._on_finished)
         L.sig_failed.connect(self._on_failed)
@@ -350,7 +356,8 @@ class MainWindow(QMainWindow):
             in_frame=a, out_frame=b + 1, long_side=sp.resolution.currentData() or 0,
             segment_frames=sp.seg_len.value(), overlap=sp.overlap.value(), seed=sp.seed.value(),
             gpu_index=sp.gpu_index(), quantization=sp.quant.currentData(), offload=sp.offload.currentData(),
-            vae=sp.vae.currentData(),
+            vae=sp.vae.currentData(), auto_despill=sp.mode == "auto",
+            scene_cuts=sp.mode != "expert" or sp.scene_cuts.isChecked(),
             matte=sp.matte_settings(), export=sp.export_settings(), output_dir=sp.output_dir(),
             base_name=sp.base_name.text().strip(),
         )
@@ -368,14 +375,34 @@ class MainWindow(QMainWindow):
                                                "frames done (processing will resume).")
 
     # ------------------------------------------------------------------
-    def start(self, export_only: bool) -> None:
+    def quick_test(self) -> None:
+        """Turbo na ~2 s kolem aktuálního snímku – výsledek rovnou v náhledu (Před/Po), bez dialogu."""
+        if not self.info or not self.input_path:
+            QMessageBox.information(self, APP_NAME, "Load an input clip first.")
+            return
+        from ..profiles import apply_profile
+
+        n = min(49, self.info.nb_frames)
+        f = self.preview.frame
+        a = max(0, min(self.info.nb_frames - n, f - n // 2))
+        js = JobSettings(in_frame=a, out_frame=a + n, gpu_index=self.settings_panel.gpu_index(),
+                         output_dir=str(Path(self.settings.cache_dir) / "quick_test"), base_name="quick_test")
+        g = next((x for x in self.gpus if x.index == js.gpu_index), None)
+        apply_profile(js, "turbo", self.info.width, self.info.height, g, self.ram_total)
+        js.export.formats = ["matte_png"]
+        self._quick = f
+        self.start(False, js)
+
+    def start(self, export_only: bool, js_override: JobSettings | None = None) -> None:
         if self._queue_running():
             QMessageBox.information(self, APP_NAME, "The queue is running – stop it first.")
             return
         if not self.info or not self.input_path:
             QMessageBox.information(self, APP_NAME, "Load an input clip first.")
             return
-        js = self.job_settings()
+        js = js_override or self.job_settings()
+        if not js_override:
+            self._quick = None
         if not js.export.formats:
             QMessageBox.warning(self, APP_NAME, "Select at least one export format.")
             return
@@ -414,6 +441,15 @@ class MainWindow(QMainWindow):
     def _on_finished(self, report: dict) -> None:
         self.running = False
         self.bottom.set_running(False)
+        if getattr(self, "_quick", None) is not None:  # Quick test: výsledek jen v náhledu
+            f, self._quick = self._quick, None
+            self.bottom.stage.setText("Quick test done ✔ – check the matte in the viewer")
+            self.bottom.append_log("OK", "Quick test (Turbo, ~2 s around the current frame) finished – showing "
+                                         "Before / After. Press Start processing for the real job.")
+            self.preview.refresh_ready()
+            self.preview.set_mode_index(4)
+            self.preview.seek(f, force=True)
+            return
         self.bottom.stage.setText("Done ✔")
         checks = report.get("checks", {})
         bad = [k for k, v in checks.items() if not v.get("ok")]
@@ -431,6 +467,7 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, APP_NAME, msg)
 
     def _on_failed(self, message: str, kind: str, suggestions: list) -> None:
+        self._quick = None
         self.running = False
         self.bottom.set_running(False)
         self.bottom.stage.setText("Cancelled" if kind == "cancelled" else "Error")
