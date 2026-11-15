@@ -550,8 +550,13 @@ class MainWindow(QMainWindow):
         QMessageBox.about(self, APP_NAME, f"<b>{APP_NAME} {__version__}</b><br>"
                           "AI video keying with the official Lightricks LTX-2.5 AlphaGen model (IC-LoRA).<br>"
                           "Inference: ltx_pipelines.ic_lora, distilled, stage 1 (--skip-stage-2).<br>"
-                          "The model picks the main subject itself – subject selection by prompt or mask is not supported.<br>"
-                          "Weights license: LTX-2.x Community License (Lightricks).")
+                          "The model picks the main subject itself – subject selection by prompt or mask is not supported.<br><br>"
+                          "© 2026 Petr Závorka – application code under the MIT License.<br>"
+                          "Models © Lightricks – <b>LTX-2.x Community License</b> (not covered by MIT). "
+                          "Organizations with annual revenues of USD 10M+ need a paid commercial license from "
+                          "Lightricks (licensing@ltx.io) for production use.<br>"
+                          "Third-party components: see THIRD_PARTY_NOTICES.md. "
+                          "Not affiliated with or endorsed by Lightricks.")
 
     # ------------------------------------------------------------------
     def _restore_ui(self) -> None:
