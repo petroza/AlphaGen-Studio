@@ -149,5 +149,6 @@ whole pipeline (with a test worker that is **not AI**), resume, batch queue.
 
 ## License
 
-Model weights: **LTX-2.x Community License** (Lightricks) – each user must accept it on Hugging Face.
+AlphaGen Studio code: **MIT** (see [LICENSE](LICENSE)).
+Model weights (not included, downloaded by each user): **LTX-2.x Community License** (Lightricks) – each user must accept it on Hugging Face.
 LTX-2 code: Apache-2.0. FFmpeg, PySide6 (LGPL), OpenCV, OpenEXR under their own licenses.
